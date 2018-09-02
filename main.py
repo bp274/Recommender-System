@@ -1,6 +1,10 @@
+#!/bin/python3
+
+import math
 import pandas as pd
 import numpy as np
 from ast import literal_eval
+from sklearn.metrics import mean_squared_error
 import warnings; warnings.simplefilter('ignore')
 
 
@@ -61,3 +65,50 @@ def build_chart(genre, percentile=0.85):
 
 dataset2 = build_chart('Romance').head(15)
 dataset3 = build_chart('Action').head(15)
+
+df = pd.read_csv('ratings_small.csv')
+
+noOfUsers = df.userId.unique().shape[0]
+movieDict = {}
+k = 0
+for row in df.itertuples():
+    if row[2] not in movieDict:
+        movieDict[row[2]] = k
+        k += 1
+
+df['movieId'] = df['movieId'].map(movieDict)
+
+noOfMovies = df.movieId.unique().shape[0]
+
+
+ratings = np.zeros((noOfUsers, noOfMovies))
+for row in df.itertuples():
+    ratings[row[1] - 1, row[2] - 1] = row[3]
+
+def similarity(ratings, kind, epsilon):
+    if kind == 'user':
+        sim = ratings.dot(ratings.T) + epsilon
+    elif kind == 'movie':
+        sim = ratings.T.dot(ratings) + epsilon
+    norms = np.array([np.sqrt(np.diagonal(sim))])
+    return (sim / norms / norms.T)
+
+userSimilarity = similarity(ratings, 'user', 10 ** (-9))
+movieSimilarity = similarity(ratings, 'movie', 10 ** (-9))
+
+def predict(ratings, similarity, kind):
+    if kind == 'user':
+        return similarity.dot(ratings) / np.array([np.abs(similarity).sum(axis=1)]).T
+    elif kind == 'movie':
+        return ratings.dot(similarity) / np.array([np.abs(similarity).sum(axis=1)])
+
+def mse(prediction, actual):
+    prediction = prediction[actual.nonzero()].flatten()
+    actual = actual[actual.nonzero()].flatten()
+    return mean_squared_error(prediction, actual)
+
+moviePrediction = predict(ratings, movieSimilarity, kind='movie')
+userPrediction = predict(ratings, userSimilarity, kind='user')
+
+print('User-based CF MSE: ' + str(mse(userPrediction, ratings)))
+print('Item-based CF MSE: ' + str(mse(moviePrediction, ratings)))
